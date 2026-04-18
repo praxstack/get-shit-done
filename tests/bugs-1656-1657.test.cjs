@@ -80,11 +80,35 @@ describe('#1657 / #2385: SDK install must be wired into installer source', () =>
     );
   });
 
-  test('install.js installs @gsd-build/sdk by default (#2385)', () => {
+  test('install.js builds gsd-sdk from in-repo sdk/ source (#2385)', () => {
     src = src || fs.readFileSync(INSTALL_SRC, 'utf-8');
+    // The installer must locate the in-repo sdk/ directory, run the build,
+    // and install it globally. We intentionally do NOT install
+    // @gsd-build/sdk from npm because that published version lags the source
+    // tree and shipping it breaks query handlers added since the last
+    // publish.
     assert.ok(
-      src.includes('@gsd-build/sdk'),
-      'installer must reference @gsd-build/sdk so gsd-sdk lands on PATH'
+      src.includes("path.resolve(__dirname, '..', 'sdk')") ||
+      src.includes('path.resolve(__dirname, "..", "sdk")'),
+      'installer must locate the in-repo sdk/ directory'
+    );
+    assert.ok(
+      src.includes("'npm install -g .'") ||
+      src.includes("['install', '-g', '.']"),
+      'installer must run `npm install -g .` from sdk/ to install the built package globally'
+    );
+    assert.ok(
+      src.includes("['run', 'build']"),
+      'installer must compile TypeScript via `npm run build` before installing globally'
+    );
+  });
+
+  test('package.json ships sdk source in published tarball (#2385)', () => {
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+    const files = rootPkg.files || [];
+    assert.ok(
+      files.some((f) => f === 'sdk' || f.startsWith('sdk/')),
+      'root package.json `files` must include sdk source so npm-registry installs can build gsd-sdk from source'
     );
   });
 });

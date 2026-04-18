@@ -6634,8 +6634,13 @@ function promptLocation(runtimes) {
 }
 
 /**
- * Ensure `@gsd-build/sdk` (the `gsd-sdk` binary) is installed globally so
- * workflow commands that shell out to `gsd-sdk query …` succeed.
+ * Build `@gsd-build/sdk` from the in-repo `sdk/` source tree and install the
+ * resulting `gsd-sdk` binary globally so workflow commands that shell out to
+ * `gsd-sdk query …` succeed.
+ *
+ * We build from source rather than `npm install -g @gsd-build/sdk` because the
+ * npm-published package lags the source tree and shipping a stale SDK breaks
+ * every /gsd-* command that depends on newer query handlers.
  *
  * Skip if --no-sdk. Skip if already on PATH (unless --sdk was explicit).
  * Failures are warnings, not fatal.
@@ -6647,6 +6652,8 @@ function installSdkIfNeeded() {
   }
 
   const { spawnSync } = require('child_process');
+  const path = require('path');
+  const fs = require('fs');
 
   if (!hasSdk) {
     const probe = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['gsd-sdk'], { stdio: 'ignore' });
@@ -6656,19 +6663,48 @@ function installSdkIfNeeded() {
     }
   }
 
-  console.log(`\n  ${cyan}Installing GSD SDK (@gsd-build/sdk)…${reset}`);
-  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(npmCmd, ['install', '-g', '@gsd-build/sdk'], { stdio: 'inherit' });
+  // Locate the in-repo sdk/ directory relative to this installer file.
+  // For global npm installs this resolves inside the published package dir;
+  // for git-based installs (npx github:..., local clone) it resolves to the
+  // repo's sdk/ tree. Both contain the source tree because root package.json
+  // includes "sdk" in its `files` array.
+  const sdkDir = path.resolve(__dirname, '..', 'sdk');
+  const sdkPackageJson = path.join(sdkDir, 'package.json');
 
   const warnManual = (reason) => {
     console.warn(`  ${yellow}⚠${reset}  ${reason}`);
-    console.warn(`     Run manually: ${cyan}npm install -g @gsd-build/sdk${reset}`);
+    console.warn(`     Build manually from the repo sdk/ directory:`);
+    console.warn(`       ${cyan}cd ${sdkDir} && npm install && npm run build && npm install -g .${reset}`);
     console.warn(`     Then restart your shell so the updated PATH is picked up.`);
     console.warn(`     Without it, /gsd-* commands will fail with "command not found: gsd-sdk".`);
   };
 
-  if (result.status !== 0) {
-    warnManual('Failed to install @gsd-build/sdk automatically.');
+  if (!fs.existsSync(sdkPackageJson)) {
+    warnManual(`SDK source tree not found at ${sdkDir}.`);
+    return;
+  }
+
+  console.log(`\n  ${cyan}Building GSD SDK from source (${sdkDir})…${reset}`);
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+  // 1. Install sdk build-time dependencies (tsc, etc.)
+  const installResult = spawnSync(npmCmd, ['install'], { cwd: sdkDir, stdio: 'inherit' });
+  if (installResult.status !== 0) {
+    warnManual('Failed to `npm install` in sdk/.');
+    return;
+  }
+
+  // 2. Compile TypeScript → sdk/dist/
+  const buildResult = spawnSync(npmCmd, ['run', 'build'], { cwd: sdkDir, stdio: 'inherit' });
+  if (buildResult.status !== 0) {
+    warnManual('Failed to `npm run build` in sdk/.');
+    return;
+  }
+
+  // 3. Install the built package globally so `gsd-sdk` lands on PATH.
+  const globalResult = spawnSync(npmCmd, ['install', '-g', '.'], { cwd: sdkDir, stdio: 'inherit' });
+  if (globalResult.status !== 0) {
+    warnManual('Failed to `npm install -g .` from sdk/.');
     return;
   }
 
@@ -6679,9 +6715,9 @@ function installSdkIfNeeded() {
   const resolverCmd = process.platform === 'win32' ? 'where' : 'which';
   const verify = spawnSync(resolverCmd, ['gsd-sdk'], { encoding: 'utf-8' });
   if (verify.status === 0 && verify.stdout && verify.stdout.trim()) {
-    console.log(`  ${green}✓${reset} Installed @gsd-build/sdk (gsd-sdk resolved at ${verify.stdout.trim().split('\n')[0]})`);
+    console.log(`  ${green}✓${reset} Built and installed GSD SDK from source (gsd-sdk resolved at ${verify.stdout.trim().split('\n')[0]})`);
   } else {
-    warnManual('Installed @gsd-build/sdk but gsd-sdk is not on PATH — npm global bin may not be in your PATH.');
+    warnManual('Built and installed GSD SDK from source but gsd-sdk is not on PATH — npm global bin may not be in your PATH.');
     if (verify.stderr) console.warn(`     resolver stderr: ${verify.stderr.trim()}`);
   }
 }
@@ -6701,9 +6737,12 @@ function installAllRuntimes(runtimes, isGlobal, isInteractive) {
   const primaryStatuslineResult = results.find(r => statuslineRuntimes.includes(r.runtime));
 
   const finalize = (shouldInstallStatusline) => {
-    // Install @gsd-build/sdk so `gsd-sdk` lands on PATH.
-    // Every /gsd-* command shells out to `gsd-sdk query …`; without this,
-    // commands fail with "command not found: gsd-sdk".
+    // Build @gsd-build/sdk from the in-repo sdk/ source and install it globally
+    // so `gsd-sdk` lands on PATH. Every /gsd-* command shells out to
+    // `gsd-sdk query …`; without this, commands fail with "command not found:
+    // gsd-sdk". The npm-published @gsd-build/sdk is kept intentionally frozen
+    // at an older version; we always build from source so users get the SDK
+    // that matches the installed GSD version.
     // Runs by default; skip with --no-sdk. Idempotent when already present.
     installSdkIfNeeded();
 
