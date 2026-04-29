@@ -30,6 +30,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (workstream wins on conflict). Explicit `null` in a workstream config now correctly
   overrides a root value. (#2714)
 
+### Changed
+- **Skill descriptions trimmed to ≤ 100 chars across all `commands/gsd/*.md`** — three
+  anti-patterns eliminated: flag documentation already present in `argument-hint:` (e.g.
+  `discuss-phase` was 380 chars, now 76), `Triggers:` keyword-stuffing lists, and
+  numbered enumeration patterns. Range was 45–380 chars; now 45–99. (#2789)
+- **`scripts/lint-descriptions.cjs` added** — CI lint gate that fails if any
+  `commands/gsd/*.md` description exceeds 100 chars. Run via `npm run lint:descriptions`.
+  (#2789)
+
 ### Fixed
 - **`extractCurrentMilestone` no longer truncates ROADMAP.md at heading-like lines inside fenced code blocks** — the milestone-end search now scans line-by-line while tracking ` ``` ` / `~~~` fence state, so a line like `# Ops runbook (v1.0 compat)` inside a code block no longer acts as a milestone boundary. Previously, any phase defined after such a block was invisible to `roadmap analyze`, `roadmap get-phase`, `/gsd-autonomous`, and all phase-number commands. (#2787)
 - **Codex install no longer corrupts existing `~/.codex/config.toml`** — the installer
