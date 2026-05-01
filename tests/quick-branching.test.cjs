@@ -93,9 +93,15 @@ function extractStep25Bash() {
 }
 
 /**
- * Build a fixture: a bare "origin" repo with `main` (one commit), a clone with
- * `origin/HEAD` pointed at `main`, and a checked-out previous-task branch
- * carrying its own unmerged commit.
+ * Build a fixture: a bare "origin" repo with a non-`main` default branch
+ * (`trunk`) so the test fails if the workflow silently falls back to "main"
+ * instead of consulting `origin/HEAD`. The clone has `origin/HEAD` pointed at
+ * `trunk` and a checked-out previous-task branch carrying its own unmerged
+ * commit.
+ *
+ * Using `trunk` here locks in the symbolic-ref code path: if the
+ * implementation skips `git symbolic-ref refs/remotes/origin/HEAD` and just
+ * defaults to `main`, every assertion below collapses (#2921 CR nitpick).
  */
 function setupFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-quick-branching-'));
@@ -104,21 +110,21 @@ function setupFixture() {
   const clonePath = path.join(root, 'clone');
 
   fs.mkdirSync(seedPath);
-  git(seedPath, 'init', '-b', 'main');
+  git(seedPath, 'init', '-b', 'trunk');
   git(seedPath, 'config', 'commit.gpgsign', 'false');
   fs.writeFileSync(path.join(seedPath, 'README.md'), '# seed\n');
   git(seedPath, 'add', 'README.md');
   git(seedPath, 'commit', '-m', 'initial');
 
   git(root, 'clone', '--bare', seedPath, originPath);
-  git(originPath, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+  git(originPath, 'symbolic-ref', 'HEAD', 'refs/heads/trunk');
 
   git(root, 'clone', originPath, clonePath);
   git(clonePath, 'config', 'commit.gpgsign', 'false');
   git(clonePath, 'config', 'user.email', 'test@test.com');
   git(clonePath, 'config', 'user.name', 'Test');
 
-  // Simulate finishing a previous quick task: branch off main, add a commit,
+  // Simulate finishing a previous quick task: branch off trunk, add a commit,
   // and stay on it (this is the failure scenario from #2916).
   git(clonePath, 'checkout', '-b', 'quick/01-prev-task');
   fs.writeFileSync(path.join(clonePath, 'prev.txt'), 'prev work\n');
@@ -153,22 +159,40 @@ describe('quick workflow: branching support', () => {
   });
 
   test('init parse list includes branch_name', () => {
-    // Structural: the workflow's init JSON parsing must mention branch_name as
-    // a top-level field. We assert this by parsing the init step's bash blocks
-    // for the `branch_name` JSON path / variable rather than substring-grep.
+    // Structural: the workflow's init step (Step 2) must declare branch_name as
+    // a parseable field of the init JSON. Restrict the scan to the init step's
+    // section only — a global walk over every bash fence could be fooled by an
+    // unrelated step that happens to mention branch_name (#2921 CR).
     const content = fs.readFileSync(QUICK_PATH, 'utf-8');
     const lines = content.split(/\r?\n/);
-    // Walk every fenced bash block in the file; look for an assignment that
-    // reads a `branch_name` field (jq, awk, or shell parameter).
-    let found = false;
-    let inBash = false;
-    for (const line of lines) {
-      if (!inBash && /^```bash\s*$/.test(line)) { inBash = true; continue; }
-      if (inBash && /^```\s*$/.test(line)) { inBash = false; continue; }
-      if (!inBash) continue;
-      if (/\bbranch_name\b/.test(line)) { found = true; break; }
+
+    // Locate the "Step 2: Initialize" heading and the next "Step N" heading
+    // that ends the section. We match the markdown bold-step convention used
+    // throughout quick.md: `**Step N[.M]: Title**`.
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (start === -1 && /^\*\*Step 2:\s*Initialize\*\*\s*$/.test(lines[i])) {
+        start = i + 1;
+      } else if (start !== -1 && /^\*\*Step \d+(?:\.\d+)?:\s/.test(lines[i])) {
+        end = i;
+        break;
+      }
     }
-    assert.ok(found, 'quick workflow should expose branch_name inside a bash block');
+    assert.notEqual(start, -1, 'quick.md should contain a "Step 2: Initialize" section');
+    if (end === -1) end = lines.length;
+
+    // Within that section, look for the branch_name token inside fenced bash
+    // blocks AND in the surrounding markdown prose that documents the JSON
+    // fields. Both are part of the init contract.
+    let found = false;
+    for (let i = start; i < end; i += 1) {
+      if (/\bbranch_name\b/.test(lines[i])) { found = true; break; }
+    }
+    assert.ok(
+      found,
+      'Step 2 (Initialize) of quick workflow should expose branch_name as part of the init contract'
+    );
   });
 
   test('Step 2.5 section is present and contains executable bash', () => {
@@ -195,15 +219,15 @@ describe('quick workflow: branching support', () => {
     const { root, clonePath } = setupFixture();
 
     try {
-      // Sanity: we begin sitting on the previous quick-task branch, 1 ahead of origin/main.
+      // Sanity: we begin sitting on the previous quick-task branch, 1 ahead of origin/trunk.
       assert.equal(
         git(clonePath, 'rev-parse', '--abbrev-ref', 'HEAD'),
         'quick/01-prev-task'
       );
       assert.equal(
-        git(clonePath, 'rev-list', '--count', 'origin/main..HEAD'),
+        git(clonePath, 'rev-list', '--count', 'origin/trunk..HEAD'),
         '1',
-        'fixture should be 1 commit ahead of origin/main'
+        'fixture should be 1 commit ahead of origin/trunk'
       );
 
       runStep(bash, clonePath, 'quick/02-new-task');
@@ -214,16 +238,16 @@ describe('quick workflow: branching support', () => {
         'Step 2.5 should switch to the new quick-task branch'
       );
 
-      const inherited = git(clonePath, 'rev-list', '--count', 'origin/main..HEAD');
+      const inherited = git(clonePath, 'rev-list', '--count', 'origin/trunk..HEAD');
       assert.equal(
         inherited,
         '0',
-        `new quick-task branch must branch off origin/main, but inherited ${inherited} commit(s) from previous-task HEAD`
+        `new quick-task branch must branch off origin/trunk, but inherited ${inherited} commit(s) from previous-task HEAD`
       );
       assert.equal(
         git(clonePath, 'rev-parse', 'HEAD'),
-        git(clonePath, 'rev-parse', 'origin/main'),
-        'new quick-task branch tip must equal origin/main tip'
+        git(clonePath, 'rev-parse', 'origin/trunk'),
+        'new quick-task branch tip must equal origin/trunk tip'
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -235,9 +259,9 @@ describe('quick workflow: branching support', () => {
     const { root, clonePath } = setupFixture();
 
     try {
-      // Pre-create the target branch off origin/main with its own commit, then
+      // Pre-create the target branch off origin/trunk with its own commit, then
       // walk away to a different branch — the step must switch back to it.
-      git(clonePath, 'checkout', '-B', 'quick/02-new-task', 'origin/main');
+      git(clonePath, 'checkout', '-B', 'quick/02-new-task', 'origin/trunk');
       fs.writeFileSync(path.join(clonePath, 'task02.txt'), 'task 2 work\n');
       git(clonePath, 'add', 'task02.txt');
       git(clonePath, 'commit', '-m', 'task 02 wip');
