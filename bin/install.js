@@ -8268,11 +8268,13 @@ function buildRuntimePromptText() {
 function parseRuntimeInput(answer) {
   const input = (answer == null ? '' : String(answer)).trim() || '1';
 
-  if (input === ALL_RUNTIMES_OPTION) {
+  // Tokenize first so the all-runtimes shortcut also fires for inputs the
+  // prompt encourages — "16,", "16 1", etc. — not just the bare "16".
+  const choices = input.split(/[\s,]+/).filter(Boolean);
+  if (choices.includes(ALL_RUNTIMES_OPTION)) {
     return allRuntimes.slice();
   }
 
-  const choices = input.split(/[\s,]+/).filter(Boolean);
   const selected = [];
   for (const c of choices) {
     const runtime = runtimeMap[c];

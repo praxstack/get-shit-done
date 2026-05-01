@@ -84,6 +84,17 @@ describe('multi-runtime selection parsing', () => {
     assert.deepStrictEqual(parseRuntimeInput('16'), allRuntimes);
   });
 
+  test('choice 16 returns all runtimes when mixed with separators or other tokens', () => {
+    // CR feedback: tokenized inputs that include 16 (e.g. trailing comma, or
+    // alongside other choices) must still expand to all-runtimes — previously
+    // only the bare "16" matched, so "16," or "16 1" silently installed a
+    // subset.
+    assert.deepStrictEqual(parseRuntimeInput('16,'), allRuntimes);
+    assert.deepStrictEqual(parseRuntimeInput('16 1'), allRuntimes);
+    assert.deepStrictEqual(parseRuntimeInput('1,16'), allRuntimes);
+    assert.deepStrictEqual(parseRuntimeInput('  16  '), allRuntimes);
+  });
+
   test('empty input defaults to claude', () => {
     assert.deepStrictEqual(parseRuntimeInput(''), ['claude']);
     assert.deepStrictEqual(parseRuntimeInput('   '), ['claude']);

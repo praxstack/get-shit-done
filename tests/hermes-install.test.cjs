@@ -23,7 +23,16 @@ describe('Hermes Agent runtime directory mapping', () => {
   });
 
   test('maps Hermes to ~/.hermes for global installs', () => {
-    assert.strictEqual(getGlobalDir('hermes'), path.join(os.homedir(), '.hermes'));
+    // Isolate from any HERMES_HOME exported on the developer's machine —
+    // otherwise this test asserts the env-derived path, not the default.
+    const originalHermesHome = process.env.HERMES_HOME;
+    delete process.env.HERMES_HOME;
+    try {
+      assert.strictEqual(getGlobalDir('hermes'), path.join(os.homedir(), '.hermes'));
+    } finally {
+      if (originalHermesHome === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = originalHermesHome;
+    }
   });
 
   test('returns .hermes config fragments for local and global installs', () => {
