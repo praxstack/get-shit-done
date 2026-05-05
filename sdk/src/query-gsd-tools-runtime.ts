@@ -8,6 +8,7 @@ import { QueryNativeDirectAdapter } from './query-native-direct-adapter.js';
 import { QueryNativeHotpathAdapter } from './query-native-hotpath-adapter.js';
 import { formatQueryRawOutput } from './query-raw-output-projection.js';
 import { failureToolsError, timeoutToolsError } from './query-tools-error-factory.js';
+import type { QueryNativeErrorFactory, QueryToolsErrorFactory } from './query-tools-error-seam.js';
 
 export interface GSDToolsRuntime {
   registry: ReturnType<typeof createRegistry>;
@@ -28,24 +29,32 @@ export function createGSDToolsRuntime(opts: {
 }): GSDToolsRuntime {
   const registry = createRegistry(opts.eventStream, opts.sessionId);
 
+  const queryToolsErrorFactory: QueryToolsErrorFactory = {
+    createTimeoutError: (message, command, args, stderr, timeoutMs) =>
+      timeoutToolsError(message, command, args, stderr, timeoutMs),
+    createFailureError: (message, command, args, exitCode, stderr) =>
+      failureToolsError(message, command, args, exitCode, stderr),
+  };
+
   const subprocessAdapter = new QuerySubprocessAdapter({
     projectDir: opts.projectDir,
     gsdToolsPath: opts.gsdToolsPath,
     timeoutMs: opts.timeoutMs,
     workstream: opts.workstream,
-    createTimeoutError: (message, command, args, stderr, timeoutMs) =>
-      timeoutToolsError(message, command, args, stderr, timeoutMs),
-    createFailureError: (message, command, args, exitCode, stderr) =>
-      failureToolsError(message, command, args, exitCode, stderr),
+    ...queryToolsErrorFactory,
   });
+
+  const nativeErrorFactory: QueryNativeErrorFactory = {
+    createNativeTimeoutError: (message, command, args) =>
+      timeoutToolsError(message, command, args, '', opts.timeoutMs),
+    createNativeFailureError: (message, command, args, cause) =>
+      failureToolsError(message, command, args, 1, '', cause),
+  };
 
   const nativeDirectAdapter = new QueryNativeDirectAdapter({
     timeoutMs: opts.timeoutMs,
     dispatch: (registryCommand, registryArgs) => registry.dispatch(registryCommand, registryArgs, opts.projectDir),
-    createTimeoutError: (message, command, args) =>
-      timeoutToolsError(message, command, args, '', opts.timeoutMs),
-    createFailureError: (message, command, args, cause) =>
-      failureToolsError(message, command, args, 1, '', cause),
+    ...nativeErrorFactory,
   });
 
   const transport = new GSDTransport(registry, {

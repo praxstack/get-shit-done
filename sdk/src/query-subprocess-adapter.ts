@@ -1,27 +1,13 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { timeoutMessage } from './query-failure-classification.js';
-import type { GSDToolsError } from './gsd-tools-error.js';
+import type { QueryToolsErrorFactory } from './query-tools-error-seam.js';
 
-export interface QuerySubprocessAdapterDeps {
+export interface QuerySubprocessAdapterDeps extends QueryToolsErrorFactory {
   projectDir: string;
   gsdToolsPath: string;
   timeoutMs: number;
   workstream?: string;
-  createTimeoutError: (
-    message: string,
-    command: string,
-    args: string[],
-    stderr: string,
-    timeoutMs: number,
-  ) => GSDToolsError;
-  createFailureError: (
-    message: string,
-    command: string,
-    args: string[],
-    exitCode: number | null,
-    stderr: string,
-  ) => GSDToolsError;
 }
 
 export class QuerySubprocessAdapter {

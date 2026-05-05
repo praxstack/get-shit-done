@@ -9,8 +9,8 @@ describe('QueryNativeDirectAdapter', () => {
       dispatch: async () => {
         throw new Error('boom');
       },
-      createTimeoutError: (message, command, args) => GSDToolsError.timeout(message, command, args),
-      createFailureError: (message, command, args, cause) => GSDToolsError.failure(message, command, args, 1, '', { cause }),
+      createNativeTimeoutError: (message, command, args) => GSDToolsError.timeout(message, command, args),
+      createNativeFailureError: (message, command, args, cause) => GSDToolsError.failure(message, command, args, 1, '', { cause }),
     });
 
     await expect(adapter.dispatchJson('state', ['load'], 'state.load', [])).rejects.toMatchObject({
@@ -26,8 +26,8 @@ describe('QueryNativeDirectAdapter', () => {
       dispatch: async () => {
         throw timeoutErr;
       },
-      createTimeoutError: (message, command, args) => GSDToolsError.timeout(message, command, args),
-      createFailureError: (message, command, args, cause) => GSDToolsError.failure(message, command, args, 1, '', { cause }),
+      createNativeTimeoutError: (message, command, args) => GSDToolsError.timeout(message, command, args),
+      createNativeFailureError: (message, command, args, cause) => GSDToolsError.failure(message, command, args, 1, '', { cause }),
     });
 
     await expect(adapter.dispatchJson('state', ['load'], 'state.load', [])).rejects.toBe(timeoutErr);

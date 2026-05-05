@@ -1,13 +1,12 @@
 import { formatQueryRawOutput } from './query-raw-output-projection.js';
 import { GSDToolsError } from './gsd-tools-error.js';
 import { errorMessage, timeoutMessage } from './query-failure-classification.js';
+import type { QueryNativeErrorFactory } from './query-tools-error-seam.js';
 import type { QueryResult } from './query/utils.js';
 
-export interface QueryNativeDirectAdapterDeps {
+export interface QueryNativeDirectAdapterDeps extends QueryNativeErrorFactory {
   timeoutMs: number;
   dispatch: (registryCommand: string, registryArgs: string[]) => Promise<QueryResult>;
-  createTimeoutError: (message: string, command: string, args: string[]) => GSDToolsError;
-  createFailureError: (message: string, command: string, args: string[], cause: unknown) => GSDToolsError;
 }
 
 /**
@@ -21,7 +20,7 @@ export class QueryNativeDirectAdapter {
       return await this.withTimeout(legacyCommand, legacyArgs, this.deps.dispatch(registryCommand, registryArgs));
     } catch (error) {
       if (error instanceof GSDToolsError) throw error;
-      throw this.deps.createFailureError(errorMessage(error), legacyCommand, legacyArgs, error);
+      throw this.deps.createNativeFailureError(errorMessage(error), legacyCommand, legacyArgs, error);
     }
   }
 
@@ -40,7 +39,7 @@ export class QueryNativeDirectAdapter {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         reject(
-          this.deps.createTimeoutError(
+          this.deps.createNativeTimeoutError(
             timeoutMessage(legacyCommand, legacyArgs, this.deps.timeoutMs),
             legacyCommand,
             legacyArgs,
