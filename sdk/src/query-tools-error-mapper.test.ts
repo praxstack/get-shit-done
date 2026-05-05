@@ -14,8 +14,8 @@ describe('query tools error mapper', () => {
     expect(err.classification).toEqual({ kind: 'timeout', timeoutMs: 1234 });
   });
 
-  it('does not attach timeout classification for non-timeout failures', () => {
+  it('attaches failure classification for non-timeout failures', () => {
     const err = toGSDToolsError('state', ['load'], new Error('boom'));
-    expect(err.classification).toBeUndefined();
+    expect(err.classification).toEqual({ kind: 'failure' });
   });
 });

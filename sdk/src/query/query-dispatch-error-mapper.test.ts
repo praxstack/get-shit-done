@@ -37,6 +37,17 @@ describe('query dispatch error mapper', () => {
     expect(err.details).toMatchObject({ timeout_ms: 1234 });
   });
 
+  it('maps typed failure classification from GSDToolsError', () => {
+    const err = mapNativeDispatchError(
+      new GSDToolsError('boom', 'state', ['load'], 1, '', {
+        classification: { kind: 'failure' },
+      }),
+      'state.load',
+      [],
+    );
+    expect(err.kind).toBe('native_failure');
+  });
+
   it('maps fallback errors', () => {
     const err = mapFallbackDispatchError(new Error('spawn ENOENT'), 'state', ['load']);
     expect(err.kind).toBe('fallback_failure');

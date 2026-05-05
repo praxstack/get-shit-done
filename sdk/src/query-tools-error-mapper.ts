@@ -1,6 +1,6 @@
 import { GSDError, exitCodeFor } from './errors.js';
 import { GSDToolsError } from './gsd-tools-error.js';
-import { isTimeoutMessage, errorMessage, parseTimeoutMs } from './query-failure-classification.js';
+import { errorMessage, toFailureSignal } from './query-failure-classification.js';
 
 /**
  * Module owning projection of internal errors to GSDToolsError contract.
@@ -18,6 +18,11 @@ export function toGSDToolsError(command: string, args: string[], err: unknown): 
   }
 
   const msg = errorMessage(err);
+  const signal = toFailureSignal(err);
+  const classification = signal.kind === 'timeout'
+    ? { kind: 'timeout' as const, timeoutMs: signal.timeoutMs }
+    : { kind: 'failure' as const };
+
   return new GSDToolsError(
     msg,
     command,
@@ -25,14 +30,7 @@ export function toGSDToolsError(command: string, args: string[], err: unknown): 
     1,
     '',
     err instanceof Error
-      ? {
-          cause: err,
-          ...(isTimeoutMessage(msg)
-            ? { classification: { kind: 'timeout' as const, timeoutMs: parseTimeoutMs(msg) } }
-            : undefined),
-        }
-      : (isTimeoutMessage(msg)
-        ? { classification: { kind: 'timeout' as const, timeoutMs: parseTimeoutMs(msg) } }
-        : undefined),
+      ? { cause: err, classification }
+      : { classification },
   );
 }
