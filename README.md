@@ -215,6 +215,7 @@ For the full configuration reference — all settings, git branching strategies,
 | [Commands](docs/COMMANDS.md) | Every command with flags and examples |
 | [Configuration](docs/CONFIGURATION.md) | Full config schema, model profiles, git branching |
 | [Architecture](docs/ARCHITECTURE.md) | How the multi-agent orchestration works |
+| [CLI Tools](docs/CLI-TOOLS.md) | `gsd-sdk query` and programmatic SDK dispatch seams |
 | [Features](docs/FEATURES.md) | Complete feature index |
 | [Changelog](CHANGELOG.md) | What changed in each release |
 
